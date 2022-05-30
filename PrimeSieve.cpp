@@ -3,12 +3,9 @@
 #include <cmath>
 #include <chrono>
 
-#define N 100
+#define N 100000000
 
 using namespace std;
-
-
-
 
 void Master(int rank, int comm_size);
 void Slave(int rank, int comm_size);
@@ -33,7 +30,7 @@ int main(int argc, char **argv)
 void Master(int rank, int comm_size)
 {
     //a size for an interval
-    auto start = chrono::steady_clock::now();
+	auto time_start = std::chrono::high_resolution_clock::now();
 
     int splice_count = comm_size - 1;
     int splices[splice_count];
@@ -58,12 +55,13 @@ void Master(int rank, int comm_size)
     }
 
     int test = splices[splice_count-1];
-    int test1 = N;
+    int test1 = N - 1;
     MPI_Send(&test, 1, MPI_INT, rank +splice_count, 0, MPI_COMM_WORLD);
     MPI_Send(&test1, 1, MPI_INT, rank +splice_count, 1, MPI_COMM_WORLD);
 
 	for (int block = 0; block < splice_count-1; ++block)
 	{
+        //blocking test for a message???
 		MPI_Probe(rank+block+1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 		//        destination    any tag    communicator?    MPI status
 		//      process thread_ID
@@ -75,15 +73,17 @@ void Master(int rank, int comm_size)
 
 	MPI_Probe(splice_count, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-    MPI_Recv(bool_arr + splices[splice_count-1], N-splices[splice_count-1]+1, MPI_C_BOOL, rank+splice_count, 2, MPI_COMM_WORLD, &status);
+    MPI_Recv(bool_arr + splices[splice_count-1], N-splices[splice_count-1], MPI_C_BOOL, rank+splice_count, 2, MPI_COMM_WORLD, &status);
 
+	auto time_stop = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> time_exec = time_stop - time_start;
+	std::cout << "Execution time: " << time_exec.count() << " ms\n";
 
-    for (int i=2; i<=N; i++)
+    /*for (int i=2; i<=N; i++)
         if(bool_arr[i])
-            cout << i << " ";
-    auto end = chrono::steady_clock::now();
-    chrono::duration<double> elapsed_seconds = end-start;
-    cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+            cout << i << " ";*/
+
+	delete[] bool_arr;
 }
 
 void Slave(int rank, int comm_size)
@@ -129,11 +129,14 @@ void PrimeSieve(int upper_bound, int lower_bound, bool prime[], int rank, int co
 				if (prime[i-lower_bound] == true)
 				{
 					signal = i; // feed prime number to other threads
+					//cout << "Rank " << rank << " : " << i << endl;
 					for (int next_rank = rank + 1; next_rank < comm_size; next_rank++)
 						MPI_Send(&signal, 1, MPI_INT, next_rank, 3, MPI_COMM_WORLD);
 
-					for (int j = i*i; j <= upper_bound; j += i)
-						prime[j-lower_bound] = false;
+					if (i <= upper_bound / i) {
+						for (int j = i * i; j <= upper_bound; j += i)
+							prime[j - lower_bound] = false;
+					}
 				}
 			}
 			signal = -1; // send signal to alert other threads of this thread's job completion
@@ -156,8 +159,14 @@ void PrimeSieve(int upper_bound, int lower_bound, bool prime[], int rank, int co
 			{
 				current_prime = signal;
 				int k = ceil((double)lower_bound / current_prime);
-				for (int j = current_prime * k; j <= upper_bound; j += current_prime)
-					prime[j - lower_bound] = false;
+				if (current_prime <= upper_bound / current_prime) {
+					int j = current_prime * k;
+					if (current_prime * current_prime > lower_bound)
+						j = current_prime * current_prime;
+
+					for (j; j <= upper_bound; j += current_prime)
+						prime[j - lower_bound] = false;
+				}
 			}
 		}
 	}
