@@ -3,12 +3,12 @@
 #include <cmath>
 #include <chrono>
 
-#define N 100000000
+#define N 10000
 
 using namespace std;
 
-void Master(int rank, int comm_size);
-void Slave(int rank, int comm_size);
+void Head(int rank, int comm_size);
+void Tail(int rank, int comm_size);
 void PrimeSieve(int upper_bound, int lower_bound, bool prime[], int rank, int comm_size);
 
 int main(int argc, char **argv)
@@ -18,20 +18,20 @@ int main(int argc, char **argv)
     int rank, comm_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
-    //the first thread goes to master function every other goes to slave
+    //the first thread goes to head function every other goes to tail
 	if (rank == 0)
-		Master(rank, comm_size);
+		Head(rank, comm_size);
 	else
-		Slave(rank, comm_size);
+		Tail(rank, comm_size);
 
     MPI_Finalize();
 }
 
-void Master(int rank, int comm_size)
+void Head(int rank, int comm_size)
 {
-    //a size for an interval
+    //Timer start
 	auto time_start = std::chrono::high_resolution_clock::now();
-
+    //a size for an interval
     int splice_count = comm_size - 1;
     int splices[splice_count];
     splices[0] = 0;
@@ -50,8 +50,8 @@ void Master(int rank, int comm_size)
         MPI_Send(&test, 1, MPI_INT, rank +block+ 1, 0, MPI_COMM_WORLD);
         MPI_Send(&test1, 1, MPI_INT, rank +block+ 1, 1, MPI_COMM_WORLD);
 
-        //           message buffer??        size of the data item   destination  chosen flag
-        //                                   interval    as integer  process thread_ID   always has to be ussed
+        // message buffer??  size of the data item   destination  chosen flag
+        //                   interval    as integer  process thread_ID
     }
 
     int test = splices[splice_count-1];
@@ -61,7 +61,6 @@ void Master(int rank, int comm_size)
 
 	for (int block = 0; block < splice_count-1; ++block)
 	{
-        //blocking test for a message???
 		MPI_Probe(rank+block+1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 		//        destination    any tag    communicator?    MPI status
 		//      process thread_ID
@@ -74,7 +73,7 @@ void Master(int rank, int comm_size)
 	MPI_Probe(splice_count, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
     MPI_Recv(bool_arr + splices[splice_count-1], N-splices[splice_count-1], MPI_C_BOOL, rank+splice_count, 2, MPI_COMM_WORLD, &status);
-
+    //counting the time
 	auto time_stop = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double, std::milli> time_exec = time_stop - time_start;
 	std::cout << "Execution time: " << time_exec.count() << " ms\n";
@@ -86,7 +85,7 @@ void Master(int rank, int comm_size)
 	delete[] bool_arr;
 }
 
-void Slave(int rank, int comm_size)
+void Tail(int rank, int comm_size)
 {
     MPI_Status status;
     int lower_bound, upper_bound;
@@ -129,7 +128,6 @@ void PrimeSieve(int upper_bound, int lower_bound, bool prime[], int rank, int co
 				if (prime[i-lower_bound] == true)
 				{
 					signal = i; // feed prime number to other threads
-					//cout << "Rank " << rank << " : " << i << endl;
 					for (int next_rank = rank + 1; next_rank < comm_size; next_rank++)
 						MPI_Send(&signal, 1, MPI_INT, next_rank, 3, MPI_COMM_WORLD);
 
