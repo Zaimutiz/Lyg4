@@ -3,7 +3,7 @@
 #include <cmath>
 #include <chrono>
 
-#define N 10000
+#define N 100
 
 using namespace std;
 
